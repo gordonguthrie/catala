@@ -57,6 +57,13 @@ help : ../Makefile.common.mk
 		Python \
 		$(CURR_DIR)$<
 
+#> <target_file>.gleam			: Compiles the file to Gleam
+%.gleam: %.catala_$(CATALA_LANG)
+	@$(CATALA) Makefile $(CURR_DIR)$<
+	$(CATALA) \
+		gleam \
+		$(CURR_DIR)$<
+
 #> <target_file>.tex			: Weaves the file to LaTeX
 %.tex: %.catala_$(CATALA_LANG)
 	@$(CATALA) Makefile $(CURR_DIR)$<

@@ -7,6 +7,13 @@
  (libraries catala.driver))
 
 (library
+ (name gleam)
+ (public_name catala.plugins.gleam)
+ (synopsis "Catala plugin that emits Gleam")
+ (modules gleam)
+ (libraries catala.driver))
+
+(library
  (name api_web)
  (public_name catala.plugins.api_web)
  (synopsis "Catala plugin for interaction with a web interface")
