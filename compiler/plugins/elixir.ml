@@ -1,6 +1,6 @@
 (* This file is part of the Catala compiler, a specification language for tax
    and social benefits computation rules. Copyright (C) 2020 Inria, contributor:
-   Louis Gesbert <louis.gesbert@inria.fr>.
+   Denis Merigoux <denis.merigoux@inria.fr>
 
    Licensed under the Apache License, Version 2.0 (the "License"); you may not
    use this file except in compliance with the License. You may obtain a copy of
@@ -16,11 +16,8 @@
 
 open Catala_utils
 open Shared_ast
-open Lcalc.Ast
+open Ast
 module D = Dcalc.Ast
-
-let name = "gleam"
-let extension = ".gleam"
 
 let find_struct (s : StructName.t) (ctx : decl_ctx) : typ StructField.Map.t =
   try StructName.Map.find s ctx.ctx_structs
@@ -77,7 +74,19 @@ let format_string_list (fmt : Format.formatter) (uids : string list) : unit =
     uids
 
 let avoid_keywords (s : string) : string =
-  match s with "pub" | "fn" | "let" -> s ^ "_user" | _ -> s
+  match s with
+  (* list taken from
+     http://caml.inria.fr/pub/docs/manual-ocaml/lex.html#sss:keywords *)
+  | "and" | "as" | "assert" | "asr" | "begin" | "class" | "constraint" | "do"
+  | "done" | "downto" | "else" | "end" | "exception" | "external" | "false"
+  | "for" | "fun" | "function" | "functor" | "if" | "in" | "include" | "inherit"
+  | "initializer" | "land" | "lazy" | "let" | "lor" | "lsl" | "lsr" | "lxor"
+  | "match" | "method" | "mod" | "module" | "mutable" | "new" | "nonrec"
+  | "object" | "of" | "open" | "or" | "private" | "rec" | "sig" | "struct"
+  | "then" | "to" | "true" | "try" | "type" | "val" | "virtual" | "when"
+  | "while" | "with" | "Stdlib" | "Runtime" | "Oper" ->
+    s ^ "_user"
+  | _ -> s
 
 let format_struct_name (fmt : Format.formatter) (v : StructName.t) : unit =
   Format.asprintf "%a" StructName.format_t v
@@ -108,7 +117,7 @@ let format_struct_field_name
     Format.fprintf fmt "%a.%s" format_to_module_name (`Sname sname)
   | None -> Format.fprintf fmt "%s")
     (avoid_keywords
-       (String.lowercase_ascii (Format.asprintf "%a" StructField.format_t v)))
+       (String.to_ascii (Format.asprintf "%a" StructField.format_t v)))
 
 let format_enum_name (fmt : Format.formatter) (v : EnumName.t) : unit =
   Format.fprintf fmt "%s"
@@ -139,47 +148,36 @@ let rec typ_embedding_name (fmt : Format.formatter) (ty : typ) : unit =
 let typ_needs_parens (e : typ) : bool =
   match Mark.remove e with TArrow _ | TArray _ -> true | _ -> false
 
-let gleamtlit (fmt : Format.formatter) (l : typ_lit) : unit =
-  Print.base_type fmt
-    (match l with
-    | TUnit -> "Nil"
-    | TBool -> "Bool"
-    | TInt -> "Int"
-    | TRat -> "runtime.Decimal"
-    | TMoney -> "runtime.Money"
-    | TDuration -> "runtime.Duration"
-    | TDate -> "runtime.Date")
-
 let rec format_typ (fmt : Format.formatter) (typ : typ) : unit =
   let format_typ_with_parens (fmt : Format.formatter) (t : typ) =
     if typ_needs_parens t then Format.fprintf fmt "(%a)" format_typ t
     else Format.fprintf fmt "%a" format_typ t
   in
   match Mark.remove typ with
-  | TLit l -> Format.fprintf fmt "%a" gleamtlit l
+  | TLit l -> Format.fprintf fmt "%a" Print.tlit l
   | TTuple ts ->
-    Format.fprintf fmt "@[<hov 2>(%a)@] xqx2"
+    Format.fprintf fmt "@[<hov 2>(%a)@]"
       (Format.pp_print_list
          ~pp_sep:(fun fmt () -> Format.fprintf fmt "@ *@ ")
          format_typ_with_parens)
       ts
-  | TStruct s -> Format.fprintf fmt "%a" format_to_module_name (`Sname s)
+  | TStruct s -> Format.fprintf fmt "%a.t" format_to_module_name (`Sname s)
   | TOption t ->
-    Format.fprintf fmt "@[<hov 2>(%a)@] %a xqx4" format_typ_with_parens t
+    Format.fprintf fmt "@[<hov 2>(%a)@] %a" format_typ_with_parens t
       format_enum_name Expr.option_enum
-  | TEnum e -> Format.fprintf fmt "%a" format_to_module_name (`Ename e)
+  | TEnum e -> Format.fprintf fmt "%a.t" format_to_module_name (`Ename e)
   | TArrow (t1, t2) ->
-    Format.fprintf fmt "@[<hov 2>%a@] xqx6"
+    Format.fprintf fmt "@[<hov 2>%a@]"
       (Format.pp_print_list
-         ~pp_sep:(fun fmt () -> Format.fprintf fmt " ->@ xqx7")
+         ~pp_sep:(fun fmt () -> Format.fprintf fmt " ->@ ")
          format_typ_with_parens)
       (t1 @ [t2])
-  | TArray t1 -> Format.fprintf fmt "@[%a@ array@] xqx8" format_typ_with_parens t1
-  | TAny -> Format.fprintf fmt "_ xqx9"
+  | TArray t1 -> Format.fprintf fmt "@[%a@ array@]" format_typ_with_parens t1
+  | TAny -> Format.fprintf fmt "_"
 
 let format_var (fmt : Format.formatter) (v : 'm Var.t) : unit =
   let lowercase_name =
-    String.lowercase_ascii (String.lowercase_ascii (Bindlib.name_of v))
+    String.to_snake_case (String.to_ascii (Bindlib.name_of v))
   in
   let lowercase_name =
     Re.Pcre.substitute ~rex:(Re.Pcre.regexp "\\.")
@@ -255,7 +253,7 @@ let rec format_expr (ctx : decl_ctx) (fmt : Format.formatter) (e : 'm expr) :
          (fun fmt e -> Format.fprintf fmt "%a" format_with_parens e))
       es
   | ETupleAccess { e; index; size } ->
-    Format.fprintf fmt "xqxqx let@ %a@ = %a@ in@ x"
+    Format.fprintf fmt "let@ %a@ = %a@ in@ x"
       (Format.pp_print_list
          ~pp_sep:(fun fmt () -> Format.fprintf fmt ",@ ")
          (fun fmt i ->
@@ -297,7 +295,7 @@ let rec format_expr (ctx : decl_ctx) (fmt : Format.formatter) (e : 'm expr) :
       (Format.pp_print_list
          ~pp_sep:(fun fmt () -> Format.fprintf fmt "")
          (fun fmt (x, tau, arg) ->
-           Format.fprintf fmt "@[<hov 2>zzqqzz let@ %a@ :@ %a@ =@ %a@]@ in@\n"
+           Format.fprintf fmt "@[<hov 2>let@ %a@ :@ %a@ =@ %a@]@ in@\n"
              format_var x format_typ tau format_with_parens arg))
       xs_tau_arg format_with_parens body
   | EAbs { binder; tys } ->
@@ -394,11 +392,11 @@ let format_struct_embedding
     (fmt : Format.formatter)
     ((struct_name, struct_fields) : StructName.t * typ StructField.Map.t) =
   if StructField.Map.is_empty struct_fields then
-    Format.fprintf fmt "zzqqzz2 let embed_%a (_: %a.t) : runtime_value = Unit@\n@\n"
+    Format.fprintf fmt "let embed_%a (_: %a.t) : runtime_value = Unit@\n@\n"
       format_struct_name struct_name format_to_module_name (`Sname struct_name)
   else
     Format.fprintf fmt
-      "@[<hov 2>zzqqzz3 let embed_%a (x: %a.t) : runtime_value =@ Struct([\"%a\"],@ \
+      "@[<hov 2>let embed_%a (x: %a.t) : runtime_value =@ Struct([\"%a\"],@ \
        @[<hov 2>[%a]@])@]@\n\
        @\n"
       format_struct_name struct_name format_to_module_name (`Sname struct_name)
@@ -416,11 +414,11 @@ let format_enum_embedding
     (fmt : Format.formatter)
     ((enum_name, enum_cases) : EnumName.t * typ EnumConstructor.Map.t) =
   if EnumConstructor.Map.is_empty enum_cases then
-    Format.fprintf fmt "zzqqzz4 let embed_%a (_: %a.t) : runtime_value = Unit@\n@\n"
+    Format.fprintf fmt "let embed_%a (_: %a.t) : runtime_value = Unit@\n@\n"
       format_to_module_name (`Ename enum_name) format_enum_name enum_name
   else
     Format.fprintf fmt
-      "@[<hv 2>@[<hov 2>zzqqzz5 let embed_%a@ @[<hov 2>(x:@ %a.t)@]@ : runtime_value \
+      "@[<hv 2>@[<hov 2>let embed_%a@ @[<hov 2>(x:@ %a.t)@]@ : runtime_value \
        =@]@ Enum([\"%a\"],@ @[<hov 2>match x with@ %a@])@]@\n\
        @\n"
       format_enum_name enum_name format_to_module_name (`Ename enum_name)
@@ -440,19 +438,18 @@ let format_ctx
   let format_struct_decl fmt (struct_name, struct_fields) =
     if StructField.Map.is_empty struct_fields then
       Format.fprintf fmt
-        "@[<v 2>module %a = type@\n@[<hov 2>type t = unit@]@]@\nend@\n"
+        "@[<v 2>module %a = struct@\n@[<hov 2>type t = unit@]@]@\nend@\n"
         format_to_module_name (`Sname struct_name)
     else
       Format.fprintf fmt
-        "//COMPILES\n@[<v>@[<v 2>type %a {@ %a(@[<hv 2>@,\
+        "@[<v>@[<v 2>module %a = struct@ @[<hv 2>type t = {@,\
          %a@;\
-         <0-2>)@]@]@ }@]@\n"
-        format_to_module_name (`Sname struct_name)
+         <0-2>}@]@]@ end@]@\n"
         format_to_module_name (`Sname struct_name)
         (Format.pp_print_list
-           ~pp_sep:(fun fmt () -> Format.fprintf fmt ",@ ")
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
            (fun _fmt (struct_field, struct_field_type) ->
-             Format.fprintf fmt "@[<hov 2>%a: %a@]" format_struct_field_name
+             Format.fprintf fmt "@[<hov 2>%a:@ %a@]" format_struct_field_name
                (None, struct_field) format_typ struct_field_type))
         (StructField.Map.bindings struct_fields);
     if !Cli.trace_flag then
@@ -460,12 +457,12 @@ let format_ctx
   in
   let format_enum_decl fmt (enum_name, enum_cons) =
     Format.fprintf fmt
-      "//COMPILESS\n@[<v>@[<v 2>type %a {@ @[<hov 2>%a@]@]\n}@]\n"
+      "module %a = struct@\n@[<hov 2>@ type t =@\n@[<hov 2>  %a@]@\nend@]@\n"
       format_to_module_name (`Ename enum_name)
       (Format.pp_print_list
-         ~pp_sep:(fun fmt () -> Format.fprintf fmt "\n")
+         ~pp_sep:(fun fmt () -> Format.fprintf fmt "@\n")
          (fun _fmt (enum_cons, enum_cons_type) ->
-           Format.fprintf fmt "%a(value: %a)" format_enum_cons_name
+           Format.fprintf fmt "@[<hov 2>| %a@ of@ %a@]" format_enum_cons_name
              enum_cons format_typ enum_cons_type))
       (EnumConstructor.Map.bindings enum_cons);
     if !Cli.trace_flag then format_enum_embedding fmt (enum_name, enum_cons)
@@ -498,14 +495,15 @@ let format_ctx
 let rec format_scope_body_expr
     (ctx : decl_ctx)
     (fmt : Format.formatter)
-    (scope_lets : 'm Lcalc.Ast.expr scope_body_expr) : unit =
+    (scope_lets : 'm Ast.expr scope_body_expr) : unit =
   match scope_lets with
   | Result e -> format_expr ctx fmt e
   | ScopeLet scope_let ->
-    let _scope_let_var, scope_let_next =
+    let scope_let_var, scope_let_next =
       Bindlib.unbind scope_let.scope_let_next
     in
-    Format.fprintf fmt "@[<hov 2>zzzqqq let %a = %a in@]@\n%a"  format_typ scope_let.scope_let_typ (format_expr ctx)
+    Format.fprintf fmt "@[<hov 2>let %a: %a = %a in@]@\n%a" format_var
+      scope_let_var format_typ scope_let.scope_let_typ (format_expr ctx)
       scope_let.scope_let_expr
       (format_scope_body_expr ctx)
       scope_let_next
@@ -513,19 +511,19 @@ let rec format_scope_body_expr
 let format_code_items
     (ctx : decl_ctx)
     (fmt : Format.formatter)
-    (code_items : 'm Lcalc.Ast.expr code_item_list) : unit =
+    (code_items : 'm Ast.expr code_item_list) : unit =
   Scope.fold_left
     ~f:(fun () item var ->
       match item with
       | Topdef (_, typ, e) ->
-        Format.fprintf fmt "@\n@\n@[<hov 2>zzzqqq2 let %a : %a =@\n%a@]" format_var var
+        Format.fprintf fmt "@\n@\n@[<hov 2>let %a : %a =@\n%a@]" format_var var
           format_typ typ (format_expr ctx) e
       | ScopeDef (_, body) ->
-        let _scope_input_var, scope_body_expr =
+        let scope_input_var, scope_body_expr =
           Bindlib.unbind body.scope_body_expr
         in
-        Format.fprintf fmt "@\n@\n@[<hov 2>XQXQX pub fun %a (%a) : %a =@\n%a@]"
-          format_var var format_to_module_name
+        Format.fprintf fmt "@\n@\n@[<hov 2>let %a (%a: %a.t) : %a.t =@\n%a@]"
+          format_var var format_var scope_input_var format_to_module_name
           (`Sname body.scope_body_input_struct) format_to_module_name
           (`Sname body.scope_body_output_struct)
           (format_scope_body_expr ctx)
@@ -534,26 +532,19 @@ let format_code_items
 
 let format_program
     (fmt : Format.formatter)
-    (p : 'm Lcalc.Ast.program)
+    (p : 'm Ast.program)
     (type_ordering : Scopelang.Dependency.TVertex.t list) : unit =
   Cli.call_unstyled (fun _ ->
       Format.fprintf fmt
-        "// This file has been generated by the Catala compiler, do not edit!\n\
-         @\n
+        "(** This file has been generated by the Catala compiler, do not edit! \
+         *)@\n\
          @\n\
-         import runtime\n
+         open Runtime_ocaml.Runtime@\n\
+         @\n\
+         [@@@@@@ocaml.warning \"-4-26-27-32-41-42\"]@\n\
          @\n\
          %a%a@\n\
          @?"
         (format_ctx type_ordering) p.decl_ctx
         (format_code_items p.decl_ctx)
         p.code_items)
-
-let apply ~source_file ~output_file ~scope prgm type_ordering =
-  ignore source_file;
-  ignore scope;
-  ignore type_ordering;
-  File.with_formatter_of_opt_file output_file
-  @@ fun fmt -> format_program fmt prgm type_ordering
-
-let () = Driver.Plugin.register_lcalc ~name ~extension apply

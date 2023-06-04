@@ -31,6 +31,21 @@ help : ../Makefile.common.mk
 	@$(CATALA) Makefile $(CURR_DIR)$<
 	$(CATALA) \
 		OCaml \
+		--avoid_exceptions \
+		$(CURR_DIR)$<
+
+#> <target_file>.lcalc			: Compiles the file to the lambda calculus
+%.lcalc: %.catala_$(CATALA_LANG)
+	@$(CATALA) Makefile $(CURR_DIR)$<
+	$(CATALA) \
+		Lcalc \
+		$(CURR_DIR)$<
+
+#> <target_file>.scalc			: Compiles the file to the statement calculus
+%.scalc: %.catala_$(CATALA_LANG)
+	@$(CATALA) Makefile $(CURR_DIR)$<
+	$(CATALA) \
+		Scalc \
 		$(CURR_DIR)$<
 
 #> <target_file>_api_web.ml	 : Compiles the file to OCaml + generates the API web
@@ -62,6 +77,15 @@ help : ../Makefile.common.mk
 	@$(CATALA) Makefile $(CURR_DIR)$<
 	$(CATALA) \
 		gleam \
+		--avoid_exceptions \
+		$(CURR_DIR)$<
+
+#> <target_file>.ex			: Compiles the file to Elixir
+%.ex: %.catala_$(CATALA_LANG)
+	@$(CATALA) Makefile $(CURR_DIR)$<
+	$(CATALA) \
+		elixir \
+		--avoid_exceptions \
 		$(CURR_DIR)$<
 
 #> <target_file>.tex			: Weaves the file to LaTeX

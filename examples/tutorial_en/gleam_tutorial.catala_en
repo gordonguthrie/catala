@@ -1,0 +1,28 @@
+### Article 1
+
+```catala-metadata
+declaration structure Individual:
+  data income content money
+  data number_of_children content integer
+```
+
+```catala-metadata
+declaration enumeration TaxCredit:
+-- NoTaxCredit
+-- ChildrenTaxCredit content integer
+```
+
+```catala-metadata
+declaration scope IncomeTaxComputation:
+  input individual content Individual
+  internal fixed_percentage content decimal
+  output income_tax content money
+```
+### Article 1
+
+```catala
+scope IncomeTaxComputation:
+  definition income_tax equals
+    individual.income * fixed_percentage
+```
+
