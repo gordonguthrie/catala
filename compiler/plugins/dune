@@ -7,10 +7,10 @@
  (libraries catala.driver))
 
 (library
- (name gleam)
+ (name elixir)
  (public_name catala.plugins.gleam)
- (synopsis "Catala plugin that emits Gleam")
- (modules gleam)
+ (synopsis "Catala plugin that emits Elixir")
+ (modules elixir)
  (libraries catala.driver))
 
 (library
